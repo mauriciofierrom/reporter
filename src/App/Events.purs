@@ -32,11 +32,12 @@ import Data.Argonaut (class EncodeJson
                     , (:=), (~>)
                     , jsonEmptyObject)
 import Control.Monad.Eff.Console (CONSOLE, log)
+import Network.HTTP.StatusCode (StatusCode(..))
 
 data Event = PageView Route
            | Navigate String DOMEvent
            | SignIn DOMEvent
-           | Authenticate String
+           | Authenticate StatusCode
            | UsernameChange DOMEvent
            | PasswordChange DOMEvent
            | ReportChange DOMEvent
@@ -80,23 +81,26 @@ foldp (SignIn ev) (State st) =
     , effects: [ do
         let params = encodeJson user
         res <- attempt $ post_ "http://localhost:9292/login" params
-        liftEff $ log (show params)
-        pure $ Just $ Authenticate "la"
+        let code = case res of
+                           Left _ -> StatusCode 0
+                           Right rec -> rec.status
+        liftEff $ log (show code)
+        pure $ Just $ Authenticate code
       ]
     }
   where
         user :: User
         user = User { username: st.username, password: st.password }
 
-foldp (Authenticate r) (State st) =
-  case r of
-       "error" -> noEffects $ (State st)
-       _       -> { state: (State st { loggedIn = true, company = r })
-                  , effects: [ liftEff do
-                      log "authentication triggered"
-                      pure $ Just $ PageView (match "/reports")
-                    ]
-                  }
+foldp (Authenticate (StatusCode code)) (State st) =
+  case code of
+       200 -> { state: (State st { loggedIn = true} )
+                , effects: [ liftEff do
+                    log "authentication triggered"
+                    pure $ Just $ PageView (match "/reports")
+                  ]
+                }
+       _ -> noEffects $ (State st)
 
 foldp (ReportChange ev) (State st) =
   noEffects $ State st { report = (targetValue ev) }
