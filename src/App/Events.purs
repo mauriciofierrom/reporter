@@ -7,6 +7,7 @@ import Data.Functor ((<$>))
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Either (Either(Left, Right), either)
 import Data.Int (fromString)
+import Data.Show (show)
 import DOM.Event.Event (preventDefault)
 import DOM (DOM)
 import DOM.HTML.Types(HISTORY)
@@ -14,6 +15,8 @@ import DOM.HTML.History (DocumentTitle(..), URL(..), pushState)
 import DOM.HTML (window)
 import DOM.HTML.Window (history)
 import Pux.DOM.Events (DOMEvent, targetValue)
+import Signal.Channel (CHANNEL)
+import Control.Monad.Eff.Exception (EXCEPTION)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Aff (attempt, launchAff)
 import Control.Monad.Aff.Class (liftAff)
@@ -22,12 +25,13 @@ import Control.Applicative (pure, (*>))
 import App.Routes (Route, match)
 import App.State (State(..))
 import Data.Function (($))
-import Network.HTTP.Affjax (AJAX, get, post)
+import Network.HTTP.Affjax (AJAX, get, post_)
 import Pux (EffModel, noEffects, onlyEffects)
 import Data.Argonaut (class EncodeJson
                     , encodeJson
                     , (:=), (~>)
                     , jsonEmptyObject)
+import Control.Monad.Eff.Console (CONSOLE, log)
 
 data Event = PageView Route
            | Navigate String DOMEvent
@@ -51,7 +55,7 @@ instance encodeJsonPost :: EncodeJson User where
     ~> "password" := user.password
     ~> jsonEmptyObject
 
-type AppEffects fx = (ajax :: AJAX | fx)
+type AppEffects fx = (dom :: DOM, history :: HISTORY, ajax :: AJAX, console :: CONSOLE | fx)
 
 foldp :: ∀ fx. Event -> State -> EffModel State Event (AppEffects fx)
 foldp (PageView r) (State st) = noEffects $ State st { route = r }
@@ -73,10 +77,11 @@ foldp (PasswordChange ev) (State st) =
 
 foldp (SignIn ev) (State st) =
     { state: (State st)
-    , effects: [liftEff do
+    , effects: [ do
         let params = encodeJson user
-        res <- liftAff $ post "http://localhost:9292/login" $ params
-        pure $ Authenticate "la"
+        res <- attempt $ post_ "http://localhost:9292/login" params
+        liftEff $ log (show params)
+        pure $ Just $ Authenticate "la"
       ]
     }
   where
@@ -88,6 +93,7 @@ foldp (Authenticate r) (State st) =
        "error" -> noEffects $ (State st)
        _       -> { state: (State st { loggedIn = true, company = r })
                   , effects: [ liftEff do
+                      log "authentication triggered"
                       pure $ Just $ PageView (match "/reports")
                     ]
                   }
