@@ -1,6 +1,6 @@
 module App.Events where
 
-import Prelude (discard, (==), otherwise, (&&))
+import Prelude (discard, (==), otherwise, (&&), (#), (<<<))
 import Data.Foreign (toForeign)
 import Data.Function (($))
 import Data.Functor ((<$>))
@@ -23,7 +23,7 @@ import Control.Monad.Aff.Class (liftAff)
 import Control.Bind((=<<), bind)
 import Control.Applicative (pure, (*>))
 import App.Routes (Route, match)
-import App.State (State(..))
+import App.State (State(..), LoginForm(..), username, password, loginForm)
 import Data.Function (($))
 import Network.HTTP.Affjax (AJAX, get, post_)
 import Pux (EffModel, noEffects, onlyEffects)
@@ -33,6 +33,7 @@ import Data.Argonaut (class EncodeJson
                     , jsonEmptyObject)
 import Control.Monad.Eff.Console (CONSOLE, log)
 import Network.HTTP.StatusCode (StatusCode(..))
+import Data.Lens ((.~), (^.))
 
 data Event = PageView Route
            | Navigate String DOMEvent
@@ -70,14 +71,14 @@ foldp (Navigate url ev) st =
              ]
   }
 
-foldp (UsernameChange ev) (State st) =
-  noEffects $ State st { username = (targetValue ev) }
+foldp (UsernameChange ev) st =
+  noEffects $ st # loginForm <<< username .~ targetValue ev
 
-foldp (PasswordChange ev) (State st) =
-  noEffects $ State st { password = (targetValue ev) }
+foldp (PasswordChange ev) st =
+  noEffects $ st # loginForm <<< password .~ targetValue ev
 
-foldp (SignIn ev) (State st) =
-    { state: (State st)
+foldp (SignIn ev) st =
+    { state: st
     , effects: [ do
         let params = encodeJson user
         res <- attempt $ post_ "http://localhost:9292/login" params
@@ -90,7 +91,8 @@ foldp (SignIn ev) (State st) =
     }
   where
         user :: User
-        user = User { username: st.username, password: st.password }
+        user = User { username: st ^. loginForm ^. username
+                    , password: st ^. loginForm ^. password }
 
 foldp (Authenticate (StatusCode code)) (State st) =
   case code of
